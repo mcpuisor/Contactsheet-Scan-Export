@@ -1,12 +1,18 @@
+# -*- coding: utf-8 -*-
 import cv2
 import numpy as np
 import os
 
-# Configuration
-input_dir = r'R:\10_Projects\001_Delta\03_scan\4\test'  # Directory containing scanned images
-output_js_path = os.path.join(input_dir, 'coordinates.js')  # Output JS file path
-min_area = 1000  # Minimum contour area to detect
-y_tolerance = 20  # Vertical tolerance for grouping rows
+def get_input_directory():
+    """Prompt the user to enter the directory path."""
+    while True:
+        path = input("Enter the directory path containing scanned images: ").strip()
+        # Remove quotes if user accidentally includes them
+        path = path.strip('"').strip("'")
+        if os.path.exists(path):
+            return path
+        else:
+            print(f"Error: The directory '{path}' does not exist. Please try again.")
 
 def detect_images(image_path):
     """Detect and sort images in left-to-right, top-to-bottom order."""
@@ -49,13 +55,18 @@ def detect_images(image_path):
     # Sort each row left-to-right (by x), then all rows top-to-bottom (by y)
     sorted_coords = []
     for row in rows:
-        # Sort the row by x-coordinate (left-to-right)
-        row_sorted = sorted(row, key=lambda rect: rect[0])
+        row_sorted = sorted(row, key=lambda rect: rect[0])  # Left-to-right
         sorted_coords.extend(row_sorted)
 
     return sorted_coords
 
 def main():
+    # Get user input for directory
+    input_dir = get_input_directory()
+    output_js_path = os.path.join(input_dir, 'coordinates.js')
+    min_area = 1000  # Minimum contour area to detect
+    y_tolerance = 20  # Vertical tolerance for grouping rows
+
     # Create output directory if it doesn’t exist
     os.makedirs(os.path.dirname(output_js_path), exist_ok=True)
 
