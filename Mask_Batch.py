@@ -26,11 +26,12 @@ def detect_images(image_path, min_area, y_tolerance):
     # Find contours
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Extract coordinates and filter by area
+    # Extract coordinates and filter by area/size
     detected = []
     for contour in contours:
-        if cv2.contourArea(contour) > min_area:
-            x, y, w, h = cv2.boundingRect(contour)
+        x, y, w, h = cv2.boundingRect(contour)
+        # Skip regions smaller than 50x50 pixels and min_area
+        if cv2.contourArea(contour) > min_area and w >= 50 and h >= 50:
             detected.append((x, y, w, h))
 
     # Group into rows using y-coordinate tolerance
@@ -98,9 +99,10 @@ def main():
         f.write(js_output)
     print(f"Saved coordinates to {os.path.abspath(output_js_path)}")
 
-    # Generate JSX file with corrected regex
+    # Generate JSX file with corrected path
+    processed_js_path = output_js_path.replace('\\', '/')
     jsx_template = r'''// Photoshop JavaScript Script
-#include "{output_js_path.replace('\\', '/')}"
+#include "{processed_js_path}"
 
 for (var filename in detectedImagesByFile) {{
     var coordinates = detectedImagesByFile[filename];
@@ -128,7 +130,6 @@ for (var filename in detectedImagesByFile) {{
         var newDoc = app.documents.add(width, height);
         newDoc.paste();
         
-        // Fixed regex with proper escaping
         var outputFile = new File(input_dir + "/exports/" + filename.replace(/\.[^.]+$/, "") + "_" + i + ".jpg");
         outputFile.parent.create();
         exportJPEG(newDoc, outputFile);
@@ -143,8 +144,7 @@ function exportJPEG(doc, outputFile) {{
     jpegOptions.quality = 12;
     doc.saveAs(outputFile, jpegOptions, true, Extension.LOWERCASE);
 }}
-'''
-
+'''.format(processed_js_path=processed_js_path)
 
     with open(output_jsx_path, 'w') as f:
         f.write(jsx_template)
