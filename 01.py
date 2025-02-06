@@ -9,7 +9,7 @@ min_area = 1000  # Minimum contour area to detect
 y_tolerance = 20  # Vertical tolerance for grouping rows
 
 def detect_images(image_path):
-    """Detect and sort images in a single scanned paper (LEFT-TO-RIGHT)."""
+    """Detect and sort images in left-to-right, top-to-bottom order."""
     image = cv2.imread(image_path)
     if image is None:
         return None
@@ -21,19 +21,42 @@ def detect_images(image_path):
     # Find contours
     contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # Filter and extract coordinates
+    # Extract coordinates and filter by area
     detected = []
     for contour in contours:
         if cv2.contourArea(contour) > min_area:
             x, y, w, h = cv2.boundingRect(contour)
             detected.append((x, y, w, h))
 
-    # Sort left-to-right, top-to-bottom (KEY FIX)
-    detected.sort(key=lambda rect: (rect[1], rect[0]))  # Sort by y (top-to-bottom), then x (left-to-right)
-    return detected
+    # Group into rows using y-coordinate tolerance
+    detected.sort(key=lambda rect: rect[1])  # Preliminary sort by y
+    rows = []
+    current_row = []
+    prev_y = None
+
+    for rect in detected:
+        x, y, w, h = rect
+        if prev_y is None or abs(y - prev_y) <= y_tolerance:
+            current_row.append(rect)
+        else:
+            rows.append(current_row)
+            current_row = [rect]
+        prev_y = y
+
+    if current_row:
+        rows.append(current_row)
+
+    # Sort each row left-to-right (by x), then all rows top-to-bottom (by y)
+    sorted_coords = []
+    for row in rows:
+        # Sort the row by x-coordinate (left-to-right)
+        row_sorted = sorted(row, key=lambda rect: rect[0])
+        sorted_coords.extend(row_sorted)
+
+    return sorted_coords
 
 def main():
-    # Create output directory if it doesn't exist
+    # Create output directory if it doesn’t exist
     os.makedirs(os.path.dirname(output_js_path), exist_ok=True)
 
     # Get all image files in the input directory
