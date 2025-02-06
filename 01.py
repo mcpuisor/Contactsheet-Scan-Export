@@ -7,14 +7,13 @@ def get_input_directory():
     """Prompt the user to enter the directory path."""
     while True:
         path = input("Enter the directory path containing scanned images: ").strip()
-        # Remove quotes if user accidentally includes them
         path = path.strip('"').strip("'")
         if os.path.exists(path):
             return path
         else:
             print(f"Error: The directory '{path}' does not exist. Please try again.")
 
-def detect_images(image_path):
+def detect_images(image_path, min_area, y_tolerance):
     """Detect and sort images in left-to-right, top-to-bottom order."""
     image = cv2.imread(image_path)
     if image is None:
@@ -35,7 +34,7 @@ def detect_images(image_path):
             detected.append((x, y, w, h))
 
     # Group into rows using y-coordinate tolerance
-    detected.sort(key=lambda rect: rect[1])  # Preliminary sort by y
+    detected.sort(key=lambda rect: rect[1])
     rows = []
     current_row = []
     prev_y = None
@@ -52,39 +51,38 @@ def detect_images(image_path):
     if current_row:
         rows.append(current_row)
 
-    # Sort each row left-to-right (by x), then all rows top-to-bottom (by y)
+    # Sort each row left-to-right
     sorted_coords = []
     for row in rows:
-        row_sorted = sorted(row, key=lambda rect: rect[0])  # Left-to-right
+        row_sorted = sorted(row, key=lambda rect: rect[0])
         sorted_coords.extend(row_sorted)
 
     return sorted_coords
 
 def main():
-    # Get user input for directory
     input_dir = get_input_directory()
     output_js_path = os.path.join(input_dir, 'coordinates.js')
-    min_area = 1000  # Minimum contour area to detect
-    y_tolerance = 20  # Vertical tolerance for grouping rows
+    output_jsx_path = os.path.join(input_dir, 'Execute in PS.jsx')
+    min_area = 1000
+    y_tolerance = 20
 
-    # Create output directory if it doesn’t exist
     os.makedirs(os.path.dirname(output_js_path), exist_ok=True)
 
-    # Get all image files in the input directory
+    # Get image files
     image_files = [
         f for f in os.listdir(input_dir)
         if f.lower().endswith(('.png', '.jpg', '.jpeg'))
     ]
 
-    # Process each image and store coordinates
+    # Process images
     all_coordinates = {}
     for filename in image_files:
         filepath = os.path.join(input_dir, filename)
-        coordinates = detect_images(filepath)
+        coordinates = detect_images(filepath, min_area, y_tolerance)
         if coordinates:
             all_coordinates[filename] = coordinates
 
-    # Generate JavaScript output
+    # Generate coordinates.js
     js_output = f"var input_dir = '{input_dir.replace('\\', '/')}';\n"
     js_output += "var detectedImagesByFile = {\n"
     
@@ -96,10 +94,61 @@ def main():
         js_output += '  ]' + (',\n' if i < len(all_coordinates)-1 else '\n')
     js_output += "};\n"
 
-    # Save to JS file
     with open(output_js_path, 'w') as f:
         f.write(js_output)
     print(f"Saved coordinates to {os.path.abspath(output_js_path)}")
+
+    # Generate JSX file with corrected regex
+    jsx_template = r'''// Photoshop JavaScript Script
+#include "{output_js_path.replace('\\', '/')}"
+
+for (var filename in detectedImagesByFile) {{
+    var coordinates = detectedImagesByFile[filename];
+    var file = new File(input_dir + "/" + filename);
+    open(file);
+    
+    for (var i = 0; i < coordinates.length; i++) {{
+        var img = coordinates[i];
+        var x = img.x;
+        var y = img.y;
+        var width = img.width;
+        var height = img.height;
+        
+        var bounds = [
+            [x, y],
+            [x + width, y],
+            [x + width, y + height],
+            [x, y + height]
+        ];
+        
+        var doc = app.activeDocument;
+        doc.selection.select(bounds);
+        doc.selection.copy();
+        
+        var newDoc = app.documents.add(width, height);
+        newDoc.paste();
+        
+        // Fixed regex with proper escaping
+        var outputFile = new File(input_dir + "/exports/" + filename.replace(/\.[^.]+$/, "") + "_" + i + ".jpg");
+        outputFile.parent.create();
+        exportJPEG(newDoc, outputFile);
+        
+        newDoc.close(SaveOptions.DONOTSAVECHANGES);
+    }}
+    app.activeDocument.close(SaveOptions.DONOTSAVECHANGES);
+}}
+
+function exportJPEG(doc, outputFile) {{
+    var jpegOptions = new JPEGSaveOptions();
+    jpegOptions.quality = 12;
+    doc.saveAs(outputFile, jpegOptions, true, Extension.LOWERCASE);
+}}
+'''
+
+
+    with open(output_jsx_path, 'w') as f:
+        f.write(jsx_template)
+    print(f"Saved JSX processor to {os.path.abspath(output_jsx_path)}")
 
 if __name__ == '__main__':
     main()
